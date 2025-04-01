@@ -2,9 +2,9 @@ name: spark
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ "master" ]
+    branches: [ "main" ]
   repository_dispatch:
     types: [spark]
   workflow_dispatch:
@@ -28,7 +28,7 @@ jobs:
         spark-version: '3.5.3'
         hadoop-version: '3'
     - run: spark-submit --version
-    - name: Install pandas and openpyxl
+    - name: Install dependencies
       run: pip install pandas openpyxl
     - name: Download dataset
       run: wget -O bank.xlsx ${{github.event.client_payload.dataseturl}}
@@ -36,15 +36,14 @@ jobs:
       run: wget -O bank.py ${{github.event.client_payload.codeurl}}
     - run: ls -la
     - run: spark-submit --master local bank.py
-    - run: ls -la
     - run: ls -la results
-    - name: GIT commit and push docs
+    - name: Commit and push results
       env: 
-        CI_COMMIT_MESSAGE: save spark results
-        CI_COMMIT_AUTHOR: SoyEtoor 
+        CI_COMMIT_MESSAGE: "Update transaction analysis results"
+        CI_COMMIT_AUTHOR: "SoyEtoor"
       run: |
-        git config --global user.name "${{ env.CI_COMMIT_AUTHOR }}"
-        git config --global user.email "tu_email@ejemplo.com"
-        git add .
-        git commit -m "${{ env.CI_COMMIT_MESSAGE }}"
+        git config --global user.name "$CI_COMMIT_AUTHOR"
+        git config --global user.email "tu_email@example.com"
+        git add results/
+        git commit -m "$CI_COMMIT_MESSAGE"
         git push
