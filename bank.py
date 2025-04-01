@@ -2,36 +2,32 @@ from pyspark.sql import SparkSession
 import json
 import os
 import pandas as pd
+from pyspark.sql.functions import col
 
 if __name__ == "__main__":
     spark = SparkSession \
         .builder \
-        .appName("bank_data") \
+        .appName("transaction_data") \
         .getOrCreate()
 
     print("Reading bank.xlsx ...")
-    # Leer el archivo Excel con pandas primero
+    # Leer el archivo Excel con pandas
     pdf = pd.read_excel("bank.xlsx")
     
     # Convertir a DataFrame de Spark
-    df_bank = spark.createDataFrame(pdf)
+    df_trans = spark.createDataFrame(pdf)
 
     # Renombrar columnas para consistencia
-    df_bank = df_bank.withColumnRenamed("CustomerId", "customer_id") \
-                     .withColumnRenamed("Surname", "surname") \
-                     .withColumnRenamed("CreditScore", "credit_score") \
-                     .withColumnRenamed("Geography", "geography") \
-                     .withColumnRenamed("Gender", "gender") \
-                     .withColumnRenamed("Age", "age") \
-                     .withColumnRenamed("Tenure", "tenure") \
-                     .withColumnRenamed("Balance", "balance") \
-                     .withColumnRenamed("NumOfProducts", "num_of_products") \
-                     .withColumnRenamed("HasCrCard", "has_cr_card") \
-                     .withColumnRenamed("IsActiveMember", "is_active_member") \
-                     .withColumnRenamed("EstimatedSalary", "estimated_salary") \
-                     .withColumnRenamed("Exited", "exited")
+    df_trans = df_trans.withColumnRenamed("Date", "date") \
+                      .withColumnRenamed("Domain", "domain") \
+                      .withColumnRenamed("Location", "location") \
+                      .withColumnRenamed("Value", "value") \
+                      .withColumnRenamed("Transaction_count", "transaction_count")
 
-    df_bank.createOrReplaceTempView("bank")
+    # Mostrar esquema para verificación
+    df_trans.printSchema()
+
+    df_trans.createOrReplaceTempView("transactions")
 
     def save_to_jsonl(df, folder_name):
         path = os.path.join("results", folder_name, "data.jsonl")
@@ -40,33 +36,44 @@ if __name__ == "__main__":
             for row in df.toJSON().collect():
                 file.write(row + "\n")
 
-    # Consultas (mantener las mismas de la versión anterior)
-    query = """SELECT customer_id, credit_score, age, geography, gender 
-               FROM bank WHERE credit_score > 750 
-               ORDER BY credit_score DESC"""
-    df_high_credit = spark.sql(query)
-    df_high_credit.show(20)
-    save_to_jsonl(df_high_credit, "high_credit_customers")
+    # Consulta 1: Transacciones por dominio
+    query = """SELECT domain, COUNT(*) as total_transactions, 
+               SUM(value) as total_value 
+               FROM transactions 
+               GROUP BY domain 
+               ORDER BY total_value DESC"""
+    df_domain_stats = spark.sql(query)
+    df_domain_stats.show(20)
+    save_to_jsonl(df_domain_stats, "domain_statistics")
 
-    query = """SELECT customer_id, age, geography, gender, credit_score 
-               FROM bank WHERE exited = 1 
-               ORDER BY age"""
-    df_exited_customers = spark.sql(query)
-    df_exited_customers.show(20)
-    save_to_jsonl(df_exited_customers, "exited_customers")
+    # Consulta 2: Actividad por ubicación
+    query = """SELECT location, COUNT(*) as transaction_count,
+               AVG(value) as avg_value
+               FROM transactions
+               GROUP BY location
+               ORDER BY transaction_count DESC"""
+    df_location_stats = spark.sql(query)
+    df_location_stats.show(20)
+    save_to_jsonl(df_location_stats, "location_statistics")
 
-    query = """SELECT geography, COUNT(*) as customer_count 
-               FROM bank 
-               GROUP BY geography ORDER BY customer_count DESC"""
-    df_customers_by_country = spark.sql(query)
-    df_customers_by_country.show()
-    save_to_jsonl(df_customers_by_country, "customers_by_country")
+    # Consulta 3: Transacciones de alto valor
+    query = """SELECT date, domain, location, value
+               FROM transactions 
+               WHERE value > (SELECT AVG(value) * 3 FROM transactions)
+               ORDER BY value DESC"""
+    df_high_value = spark.sql(query)
+    df_high_value.show(20)
+    save_to_jsonl(df_high_value, "high_value_transactions")
 
-    query = """SELECT customer_id, age, geography, gender, balance 
-               FROM bank WHERE age BETWEEN 18 AND 25 AND balance > 100000 
-               ORDER BY balance DESC"""
-    df_young_high_balance = spark.sql(query)
-    df_young_high_balance.show(20)
-    save_to_jsonl(df_young_high_balance, "young_high_balance")
+    # Consulta 4: Tendencia temporal
+    query = """SELECT YEAR(date) as year, MONTH(date) as month,
+               COUNT(*) as transaction_count,
+               SUM(value) as monthly_value
+               FROM transactions
+               GROUP BY YEAR(date), MONTH(date)
+               ORDER BY year, month"""
+    df_time_series = spark.sql(query)
+    df_time_series.show(20)
+    save_to_jsonl(df_time_series, "time_series_analysis")
 
     spark.stop()
